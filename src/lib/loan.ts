@@ -2,7 +2,7 @@ import type { Loan, Payment, AmortizationRow, LoanSummary, PaymentFrequency } fr
 import { addPeriodsISO } from './format';
 
 const DAYS_PER_MONTH = 30;
-const WEEKS_PER_MONTH = 4.33;
+const WEEKS_PER_MONTH = 4;
 
 export function periodsPerMonth(frequency: PaymentFrequency): number {
   if (frequency === 'diario') return DAYS_PER_MONTH;
@@ -27,7 +27,7 @@ export function totalPeriods(loan: Loan): number {
   return loan.termLength;
 }
 
-export function effectiveMonths(loan: Loan): number {
+export function effectiveMonths(loan: { termLength: number; frequency: PaymentFrequency }): number {
   return loan.termLength / periodsPerMonth(loan.frequency);
 }
 
@@ -36,6 +36,10 @@ export function fixedPeriodPayment(capital: number, ratePctMonthly: number, term
   const n = termLength;
   if (r === 0) return capital / n;
   return (capital * r) / (1 - Math.pow(1 + r, -n));
+}
+
+function roundTo100(value: number): number {
+  return Math.round(value / 100) * 100;
 }
 
 export function generateSchedule(loan: Loan): AmortizationRow[] {
@@ -79,7 +83,6 @@ export function generateSchedule(loan: Loan): AmortizationRow[] {
 }
 
 export function computeSummary(loan: Loan, payments: Payment[]): LoanSummary {
-  const schedule = generateSchedule(loan);
   const loanPayments = payments
     .filter((p) => p.loanId === loan.id)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -93,14 +96,29 @@ export function computeSummary(loan: Loan, payments: Payment[]): LoanSummary {
   }
 
   const remainingCapital = Math.max(0, loan.capital - paidCapital);
-  const totalInterestExpected = schedule.reduce((s, r) => s + r.interest, 0);
-  const totalExpected = loan.capital + totalInterestExpected;
+
+  // For solo_interes/personalizado: interest is open-ended, not capped by schedule
+  let totalInterestExpected: number;
+  let totalExpected: number;
+
+  if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
+    // Interest is per-period and open-ended; total expected = capital + interest paid so far + next period interest
+    // For display purposes, use the per-period interest as the "expected" interest
+    const perPeriodInt = periodInterest(loan.capital, loan.interestRate, loan.frequency);
+    totalInterestExpected = paidInterest + perPeriodInt;
+    totalExpected = loan.capital + totalInterestExpected;
+  } else {
+    const schedule = generateSchedule(loan);
+    totalInterestExpected = schedule.reduce((s, r) => s + r.interest, 0);
+    totalExpected = loan.capital + totalInterestExpected;
+  }
+
   const totalPaid = loanPayments.reduce((s, p) => s + p.amount, 0);
   const outstandingInterest = Math.max(0, totalInterestExpected - paidInterest);
-  const isSettled = remainingCapital < 1 && outstandingInterest < 1;
+  const isSettled = remainingCapital < 1 && loanPayments.some((p) => p.toCapital > 0) && paidCapital >= loan.capital - 1;
 
   return {
-    schedule,
+    schedule: generateSchedule(loan),
     paidInterest,
     paidCapital,
     remainingCapital,
@@ -114,12 +132,32 @@ export function computeSummary(loan: Loan, payments: Payment[]): LoanSummary {
 }
 
 export function nextInstallment(loan: Loan, payments: Payment[]): { month: number; amount: number; interest: number; capital: number; date: string } | null {
-  const schedule = generateSchedule(loan);
   const loanPayments = payments.filter((p) => p.loanId === loan.id);
-  const nextIdx = loanPayments.length;
+  const paidCount = loanPayments.length;
+  const r = periodRateMonthly(loan.interestRate, loan.frequency);
+  const perPeriodInterest = loan.capital * r;
+
+  if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
+    // Open-ended: next installment is always just the interest for the next period
+    // Date is based on last payment date + 1 period, or loan start + 1 period if no payments
+    const lastPayment = loanPayments.sort((a, b) => b.date.localeCompare(a.date))[0];
+    const baseDate = lastPayment ? lastPayment.date : loan.startDate;
+    const nextDate = addPeriodsISO(baseDate, 1, loan.frequency);
+    return {
+      month: paidCount + 1,
+      amount: roundTo100(perPeriodInterest),
+      interest: roundTo100(perPeriodInterest),
+      capital: loan.capital,
+      date: nextDate,
+    };
+  }
+
+  // cuota_fija: use schedule
+  const schedule = generateSchedule(loan);
+  const nextIdx = paidCount;
   if (nextIdx >= schedule.length) return null;
   const row = schedule[nextIdx];
-  return { month: row.month, amount: row.payment, interest: row.interest, capital: row.capital, date: row.date };
+  return { month: row.month, amount: roundTo100(row.payment), interest: roundTo100(row.interest), capital: roundTo100(row.capital), date: row.date };
 }
 
 export function imputePayment(
@@ -129,23 +167,38 @@ export function imputePayment(
   imputation: 'auto' | 'interes' | 'capital' | 'mixto',
 ): { toInterest: number; toCapital: number; concept: 'cuota' | 'interes' | 'capital' | 'mixto' } {
   const summary = computeSummary(loan, payments);
-  const { remainingCapital, remainingInterest } = summary;
+  const { remainingCapital } = summary;
   const next = nextInstallment(loan, payments);
 
   if (imputation === 'capital') {
     return { toInterest: 0, toCapital: Math.min(amount, remainingCapital), concept: 'capital' };
   }
   if (imputation === 'interes') {
-    return { toInterest: Math.min(amount, remainingInterest), toCapital: 0, concept: 'interes' };
+    return { toInterest: amount, toCapital: 0, concept: 'interes' };
   }
   if (imputation === 'mixto') {
-    const toInterest = Math.min(amount / 2, remainingInterest);
+    const toInterest = Math.min(amount / 2, amount);
     const toCapital = Math.min(amount - toInterest, remainingCapital);
     return { toInterest, toCapital, concept: 'mixto' };
   }
+  // auto
   if (next) {
     const expectedInterest = next.interest;
     const expectedCapital = next.capital;
+
+    // For solo_interes/personalizado, "capital" in next is the full remaining capital
+    if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
+      if (amount >= expectedInterest + remainingCapital) {
+        return { toInterest: expectedInterest, toCapital: remainingCapital, concept: 'cuota' };
+      }
+      if (amount >= expectedInterest) {
+        const toCap = Math.min(amount - expectedInterest, remainingCapital);
+        return { toInterest: expectedInterest, toCapital: toCap, concept: 'mixto' };
+      }
+      return { toInterest: amount, toCapital: 0, concept: 'interes' };
+    }
+
+    // cuota_fija
     if (amount >= expectedInterest + expectedCapital) {
       return { toInterest: expectedInterest, toCapital: expectedCapital, concept: 'cuota' };
     }
@@ -153,52 +206,9 @@ export function imputePayment(
       const toCap = Math.min(amount - expectedInterest, remainingCapital);
       return { toInterest: expectedInterest, toCapital: toCap, concept: 'mixto' };
     }
-    return { toInterest: Math.min(amount, remainingInterest), toCapital: 0, concept: 'interes' };
+    return { toInterest: amount, toCapital: 0, concept: 'interes' };
   }
-  const toInt = Math.min(amount, remainingInterest);
-  const toCap = Math.min(amount - toInt, remainingCapital);
-  return { toInterest: toInt, toCapital: toCap, concept: toCap > 0 ? 'mixto' : 'interes' };
-}
-
-export function recalculateSchedule(loan: Loan, payments: Payment[], extraPayment: number): AmortizationRow[] {
-  const summary = computeSummary(loan, payments);
-  const remainingCapital = Math.max(0, summary.remainingCapital - extraPayment);
-  if (remainingCapital < 1) return [];
-  const total = totalPeriods(loan);
-  const remainingPeriods = total - summary.paymentCount;
-  if (remainingPeriods <= 0) return [];
-  const r = periodRateMonthly(loan.interestRate, loan.frequency);
-  const startDate = addPeriodsISO(loan.startDate, summary.paymentCount + 1, loan.frequency);
-
-  if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
-    const interest = remainingCapital * r;
-    return Array.from({ length: remainingPeriods }, (_, i) => {
-      const isLast = i === remainingPeriods - 1;
-      return {
-        month: i + 1,
-        date: addPeriodsISO(startDate, i, loan.frequency),
-        payment: isLast ? interest + remainingCapital : interest,
-        interest,
-        capital: isLast ? remainingCapital : 0,
-        balance: isLast ? 0 : remainingCapital,
-      };
-    });
-  }
-  const periodPayment = (remainingCapital * r) / (1 - Math.pow(1 + r, -remainingPeriods));
-  let balance = remainingCapital;
-  return Array.from({ length: remainingPeriods }, (_, i) => {
-    const interest = balance * r;
-    const cap = Math.min(periodPayment - interest, balance);
-    balance = Math.max(0, balance - cap);
-    return {
-      month: i + 1,
-      date: addPeriodsISO(startDate, i, loan.frequency),
-      payment: periodPayment,
-      interest,
-      capital: cap,
-      balance,
-    };
-  });
+  return { toInterest: amount, toCapital: 0, concept: 'interes' };
 }
 
 const FREQ_LABELS: Record<PaymentFrequency, string> = {

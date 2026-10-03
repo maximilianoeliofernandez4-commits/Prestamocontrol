@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Input, Select, Textarea, Button } from './ui';
 import type { Store } from '@/hooks/useStore';
 import type { Client, Loan, LoanModality, PaymentMethod, PaymentFrequency } from '@/types';
 import { todayISO, formatCurrency } from '@/lib/format';
-import { effectiveMonths, fixedPeriodPayment } from '@/lib/loan';
+import { effectiveMonths, fixedPeriodPayment, periodInterest } from '@/lib/loan';
 
 interface Props {
   open: boolean;
@@ -30,6 +30,10 @@ function roundToFive(value: number): number {
   return Math.round(value / 5) * 5;
 }
 
+function roundTo100(value: number): number {
+  return Math.round(value / 100) * 100;
+}
+
 export function NewLoanModal({ open, onClose, store, client, fixedClient }: Props) {
   const [clientId, setClientId] = useState(client?.id ?? '');
   const [capital, setCapital] = useState('');
@@ -41,6 +45,13 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [note, setNote] = useState('');
 
+  // Sync clientId when modal opens or client prop changes
+  useEffect(() => {
+    if (open) {
+      setClientId(client?.id ?? '');
+    }
+  }, [open, client?.id]);
+
   const cap = parseFloat(capital) || 0;
   const rate = parseFloat(interestRate) || 0;
   const term = parseInt(termLength) || 0;
@@ -51,7 +62,7 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
   const showPreview = cap > 0 && rate > 0 && term > 0;
 
   const effMonths = showPreview
-    ? effectiveMonths({ interestRate: rate, frequency, termLength: term } as Loan)
+    ? effectiveMonths({ interestRate: rate, frequency, termLength: term } as Pick<Loan, 'termLength' | 'frequency'>)
     : 0;
 
   const shouldRound = modality === 'solo_interes' || modality === 'personalizado';
@@ -60,11 +71,12 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
   const isRounded = Math.abs(roundedTotalPct - rawTotalPct) > 0.01;
   const adjustedRate = effMonths > 0 && shouldRound ? roundedTotalPct / effMonths : rate;
 
-  const perPeriodCharge = showPreview
+  const perPeriodChargeRaw = showPreview
     ? shouldRound
       ? (cap * roundedTotalPct / 100) / term
       : fixedPeriodPayment(cap, rate, term, frequency)
     : 0;
+  const perPeriodCharge = showPreview ? roundTo100(perPeriodChargeRaw) : 0;
 
   const totalInterestAmount = shouldRound
     ? cap * roundedTotalPct / 100
@@ -74,9 +86,11 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
     ? cap + totalInterestAmount
     : perPeriodCharge * term;
 
+  const canSubmit = !!(clientId && cap > 0 && rate > 0 && term > 0);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientId || cap <= 0 || rate <= 0 || term <= 0) return;
+    if (!canSubmit) return;
     store.addLoan({
       clientId,
       capital: cap,
@@ -98,7 +112,7 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
 
   const modalityLabels: Record<LoanModality, string> = {
     cuota_fija: 'Cuota Fija (Capital + Interés)',
-    solo_interes: 'Solo Interés',
+    solo_interes: 'Solo Interés (indefinido)',
     personalizado: 'Personalizado / Flexible',
   };
 
@@ -115,8 +129,8 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
         )}
 
         <div className="grid grid-cols-2 gap-4">
-          <Input label="Capital inicial (COP) *" type="number" value={capital} onChange={(e) => setCapital(e.target.value)} placeholder="1000000" />
-          <Input label="Tasa de interés mensual (%) *" type="number" step="0.1" value={interestRate} onChange={(e) => setInterestRate(e.target.value)} placeholder="5" hint="Siempre mensual — la app calcula el proporcional" />
+          <Input label="Capital inicial ($ ARS) *" type="number" value={capital} onChange={(e) => setCapital(e.target.value)} placeholder="400000" />
+          <Input label="Tasa de interés mensual (%) *" type="number" step="0.1" value={interestRate} onChange={(e) => setInterestRate(e.target.value)} placeholder="20" hint="Siempre mensual — la app calcula el proporcional" />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -184,7 +198,7 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
 
             {modality === 'solo_interes' && (
               <p className="text-xs text-teal-600 border-t border-teal-100 pt-2">
-                {formatCurrency(perPeriodCharge)} de interés cada {periodWord} + {formatCurrency(cap)} de capital al final
+                {formatCurrency(perPeriodCharge)} de interés cada {periodWord}. El capital se paga cuando el cliente cancele el préstamo, sin límite de tiempo.
               </p>
             )}
             {modality === 'personalizado' && (
@@ -202,7 +216,7 @@ export function NewLoanModal({ open, onClose, store, client, fixedClient }: Prop
 
         <div className="flex justify-end gap-3 pt-2">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={!clientId || cap <= 0}>Crear Préstamo</Button>
+          <Button type="submit" disabled={!canSubmit}>Crear Préstamo</Button>
         </div>
       </form>
     </Modal>

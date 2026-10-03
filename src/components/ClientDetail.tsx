@@ -4,7 +4,7 @@ import { Card, Badge, Button, ProgressBar, EmptyState } from './ui';
 import { formatCurrency, formatDate, todayISO } from '@/lib/format';
 import { computeSummary, nextInstallment, generateSchedule, freqBadgeText, periodLabel, periodsLabel, effectiveMonths } from '@/lib/loan';
 import type { Loan, Payment, Client } from '@/types';
-import { ArrowLeft, Phone, Plus, Wallet, Receipt, Trash2, FileText, Calendar, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Phone, Plus, Wallet, Receipt, Trash2, FileText, Calendar, TrendingUp, UserMinus } from 'lucide-react';
 
 interface Props {
   store: Store;
@@ -39,8 +39,15 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
 
   const handleWhatsApp = () => {
     const phone = client.phone.replace(/\D/g, '');
-    const waNumber = phone.length === 10 ? '57' + phone : phone;
+    const waNumber = phone.length >= 10 ? '54' + phone : phone;
     window.open(`https://wa.me/${waNumber}`, '_blank');
+  };
+
+  const handleDeleteClient = () => {
+    if (confirm(`¿Eliminar a ${client.name} y todos sus préstamos y pagos? Esta acción no se puede deshacer.`)) {
+      store.deleteClient(client.id);
+      onBack();
+    }
   };
 
   return (
@@ -48,7 +55,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
       {/* Header */}
       <div>
         <button onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600">
-          <ArrowLeft size={16} /> Volver al Dashboard
+          <ArrowLeft size={16} /> Volver al Panel
         </button>
 
         <Card className="p-6">
@@ -67,9 +74,14 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                 {client.notes && <p className="mt-1 text-sm text-slate-500">{client.notes}</p>}
               </div>
             </div>
-            <Button onClick={() => onNewLoan(client)}>
-              <Plus size={18} /> Nuevo Préstamo
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => onNewLoan(client)}>
+                <Plus size={18} /> Nuevo Préstamo
+              </Button>
+              <Button variant="danger" size="md" onClick={handleDeleteClient} title="Eliminar cliente">
+                <UserMinus size={18} />
+              </Button>
+            </div>
           </div>
         </Card>
       </div>
@@ -90,6 +102,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
             const payments = loanPayments(loan.id);
             const isExpanded = expandedLoan === loan.id;
             const showSched = showSchedule === loan.id;
+            const isOpenEnded = loan.modality === 'solo_interes' || loan.modality === 'personalizado';
 
             return (
               <Card key={loan.id} className="overflow-hidden">
@@ -102,9 +115,15 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                         <Badge variant="info">{modalityLabels[loan.modality]}</Badge>
                         <Badge variant="neutral">{freqBadge(loan)}</Badge>
                         {summary.isSettled && <Badge variant="success">Liquidada</Badge>}
+                        {isOpenEnded && !summary.isSettled && <Badge variant="warning">Indefinido</Badge>}
                       </div>
                       <p className="mt-1 text-sm text-slate-500">
-                        {loan.interestRate}% mensual · {loan.termLength} {periodsLabel(loan)} ({effectiveMonths(loan).toFixed(1)} meses) · Inicio {formatDate(loan.startDate)}
+                        {loan.interestRate}% mensual
+                        {isOpenEnded
+                          ? ` · Cobro cada ${periodLabel(loan)} sin plazo fijo`
+                          : ` · ${loan.termLength} ${periodsLabel(loan)} (${effectiveMonths(loan).toFixed(1)} meses)`
+                        }
+                        {' · Inicio ' + formatDate(loan.startDate)}
                       </p>
                       {loan.note && <p className="mt-1 text-xs text-slate-400">{loan.note}</p>}
                     </div>
@@ -118,10 +137,15 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                   {/* Progress */}
                   <div className="mt-4">
                     <div className="mb-1.5 flex items-center justify-between text-xs">
-                      <span className="text-slate-500">Progreso: {formatCurrency(summary.totalPaid)} de {formatCurrency(summary.totalExpected)}</span>
-                      <span className="font-semibold text-teal-600">{summary.progressPct.toFixed(0)}%</span>
+                      <span className="text-slate-500">
+                        {isOpenEnded
+                          ? `Cobrado en intereses: ${formatCurrency(summary.paidInterest)}`
+                          : `Progreso: ${formatCurrency(summary.totalPaid)} de ${formatCurrency(summary.totalExpected)}`
+                        }
+                      </span>
+                      {!isOpenEnded && <span className="font-semibold text-teal-600">{summary.progressPct.toFixed(0)}%</span>}
                     </div>
-                    <ProgressBar value={summary.progressPct} />
+                    {!isOpenEnded && <ProgressBar value={summary.progressPct} />}
                   </div>
 
                   {/* Summary Grid */}
@@ -140,7 +164,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                     </div>
                     {next && (
                       <div className="rounded-xl bg-amber-50 p-3">
-                        <p className="text-xs text-amber-500">Próxima cuota {periodLabel(loan)}</p>
+                        <p className="text-xs text-amber-500">Próximo cobro {periodLabel(loan)}</p>
                         <p className="text-sm font-bold text-amber-700">{formatCurrency(next.amount)}</p>
                         <p className="text-[10px] text-amber-500">{formatDate(next.date)}</p>
                       </div>
@@ -152,9 +176,11 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                     <button onClick={() => setExpandedLoan(isExpanded ? null : loan.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50">
                       <FileText size={14} /> {isExpanded ? 'Ocultar' : 'Ver'} pagos ({payments.length})
                     </button>
-                    <button onClick={() => setShowSchedule(showSched ? null : loan.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50">
-                      <Calendar size={14} /> {showSched ? 'Ocultar' : 'Ver'} plan de cuotas
-                    </button>
+                    {!isOpenEnded && (
+                      <button onClick={() => setShowSchedule(showSched ? null : loan.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50">
+                        <Calendar size={14} /> {showSched ? 'Ocultar' : 'Ver'} plan de cuotas
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         if (confirm('¿Eliminar este préstamo y todos sus pagos?')) store.deleteLoan(loan.id);
@@ -216,7 +242,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                 )}
 
                 {/* Schedule */}
-                {showSched && (
+                {showSched && !isOpenEnded && (
                   <div className="border-t border-slate-100 bg-slate-50/50 p-5">
                     <ScheduleTable loan={loan} payments={store.state.payments} />
                   </div>

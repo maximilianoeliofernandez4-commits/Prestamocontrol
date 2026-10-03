@@ -1,18 +1,22 @@
-const fmtCOP = new Intl.NumberFormat('es-CO', {
+const fmtARS = new Intl.NumberFormat('es-AR', {
   style: 'currency',
-  currency: 'COP',
+  currency: 'ARS',
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
 });
 
 export function formatCurrency(value: number): string {
-  return fmtCOP.format(Math.round(value));
+  return fmtARS.format(Math.round(value));
+}
+
+export function formatNumber(value: number): string {
+  return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(value));
 }
 
 export function formatDate(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('es-CO', {
+  return d.toLocaleDateString('es-AR', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -22,7 +26,7 @@ export function formatDate(iso: string): string {
 export function formatDateLong(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('es-CO', {
+  return d.toLocaleDateString('es-AR', {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -64,6 +68,11 @@ export function addPeriodsISO(iso: string, periods: number, frequency: 'mensual'
 
 export function monthKey(iso: string): string {
   return iso.slice(0, 7);
+}
+
+export function monthLabel(iso: string): string {
+  const d = new Date(iso + '-01T00:00:00');
+  return d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' });
 }
 
 export function uid(): string {

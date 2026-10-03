@@ -1,24 +1,39 @@
 import type { AppState, Client, Loan, Payment } from '@/types';
 import { uid, todayISO, addMonthsISO, addWeeksISO, addDaysISO } from './format';
 
-const STORAGE_KEY = 'prestamos_app_v3';
+const STORAGE_KEY = 'prestamos_app_v4';
 
 export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AppState;
-      // Backfill: add frequency + termLength on legacy loans
       for (const l of parsed.loans) {
         if (!l.frequency) l.frequency = 'mensual';
         if (l.termLength === undefined) {
           if (l.frequency === 'semanal') {
-            l.termLength = Math.round((l as unknown as { termMonths: number }).termMonths * 4.33);
+            l.termLength = Math.round((l as unknown as { termMonths: number }).termMonths * 4);
+          } else if (l.frequency === 'diario') {
+            l.termLength = Math.round((l as unknown as { termMonths: number }).termMonths * 30);
           } else {
             l.termLength = (l as unknown as { termMonths: number }).termMonths;
           }
         }
       }
+      return parsed;
+    }
+    // Try migrating from old key
+    const oldRaw = localStorage.getItem('prestamos_app_v3');
+    if (oldRaw) {
+      const parsed = JSON.parse(oldRaw) as AppState;
+      for (const l of parsed.loans) {
+        if (l.termLength === undefined && (l as unknown as { termMonths: number }).termMonths !== undefined) {
+          if (l.frequency === 'semanal') l.termLength = Math.round((l as unknown as { termMonths: number }).termMonths * 4);
+          else if (l.frequency === 'diario') l.termLength = Math.round((l as unknown as { termMonths: number }).termMonths * 30);
+          else l.termLength = (l as unknown as { termMonths: number }).termMonths;
+        }
+      }
+      saveState(parsed);
       return parsed;
     }
   } catch {
@@ -37,35 +52,35 @@ function seedData(): AppState {
   const c1: Client = {
     id: uid(),
     name: 'María González',
-    phone: '3001234567',
+    phone: '1134567890',
     notes: 'Cliente frecuente, paga puntual.',
     createdAt: todayISO(),
   };
   const c2: Client = {
     id: uid(),
     name: 'Carlos Ramírez',
-    phone: '3109876543',
+    phone: '1155667788',
     notes: 'Negociación flexible, pagos variables.',
     createdAt: todayISO(),
   };
   const c3: Client = {
     id: uid(),
     name: 'Ana Torres',
-    phone: '3205551234',
+    phone: '1166778899',
     notes: 'Préstamo con cuota fija a 6 meses.',
     createdAt: todayISO(),
   };
   const c4: Client = {
     id: uid(),
     name: 'Jorge Mendoza',
-    phone: '3114567890',
+    phone: '1177889900',
     notes: 'Pagos semanales, comerciante.',
     createdAt: todayISO(),
   };
   const c5: Client = {
     id: uid(),
     name: 'Luz Marina Pérez',
-    phone: '3123456789',
+    phone: '1188990011',
     notes: 'Pagos diarios, préstamo corto.',
     createdAt: todayISO(),
   };
@@ -73,23 +88,23 @@ function seedData(): AppState {
   const l1: Loan = {
     id: uid(),
     clientId: c1.id,
-    capital: 2000000,
+    capital: 400000,
     startDate: addMonthsISO(todayISO(), -3),
-    interestRate: 5,
+    interestRate: 15,
     modality: 'solo_interes',
     frequency: 'mensual',
     termLength: 6,
     paymentMethod: 'efectivo',
     status: 'activa',
     createdAt: addMonthsISO(todayISO(), -3),
-    note: 'Solo interés mensual, capital al final.',
+    note: 'Solo interés mensual, capital cuando cancele.',
   };
   const l2: Loan = {
     id: uid(),
     clientId: c2.id,
-    capital: 1500000,
+    capital: 250000,
     startDate: addMonthsISO(todayISO(), -2),
-    interestRate: 4,
+    interestRate: 20,
     modality: 'personalizado',
     frequency: 'mensual',
     termLength: 5,
@@ -101,9 +116,9 @@ function seedData(): AppState {
   const l3: Loan = {
     id: uid(),
     clientId: c3.id,
-    capital: 3000000,
+    capital: 600000,
     startDate: addMonthsISO(todayISO(), -2),
-    interestRate: 3,
+    interestRate: 10,
     modality: 'cuota_fija',
     frequency: 'mensual',
     termLength: 6,
@@ -115,12 +130,12 @@ function seedData(): AppState {
   const l4: Loan = {
     id: uid(),
     clientId: c4.id,
-    capital: 800000,
+    capital: 150000,
     startDate: addWeeksISO(todayISO(), -4),
-    interestRate: 6,
+    interestRate: 20,
     modality: 'solo_interes',
     frequency: 'semanal',
-    termLength: 9,
+    termLength: 8,
     paymentMethod: 'efectivo',
     status: 'activa',
     createdAt: addWeeksISO(todayISO(), -4),
@@ -129,9 +144,9 @@ function seedData(): AppState {
   const l5: Loan = {
     id: uid(),
     clientId: c5.id,
-    capital: 500000,
+    capital: 100000,
     startDate: addDaysISO(todayISO(), -10),
-    interestRate: 10,
+    interestRate: 30,
     modality: 'solo_interes',
     frequency: 'diario',
     termLength: 30,
@@ -143,61 +158,61 @@ function seedData(): AppState {
 
   const payments: Payment[] = [];
 
-  // María: 3 months of interest payments (100k each)
+  // María: 3 months of interest payments (15% of 400k = 60k each)
   for (let i = 1; i <= 3; i++) {
     payments.push({
       id: uid(),
       loanId: l1.id,
       date: addMonthsISO(l1.startDate, i),
-      amount: 100000,
+      amount: 60000,
       method: 'efectivo',
       concept: 'interes',
       imputation: 'interes',
-      toInterest: 100000,
+      toInterest: 60000,
       toCapital: 0,
       note: `Interés mes ${i}`,
       receiptNo: `R-${String(i).padStart(5, '0')}`,
-      remainingCapital: 2000000,
-      remainingInterest: 300000 - i * 100000,
+      remainingCapital: 400000,
+      remainingInterest: 0,
     });
   }
 
-  // Carlos: 1 full payment + 1 partial (solo interés)
+  // Carlos: 1 full payment + 1 partial (solo interés) — 20% of 250k = 50k
   payments.push({
     id: uid(),
     loanId: l2.id,
     date: addMonthsISO(l2.startDate, 1),
-    amount: 60000,
+    amount: 50000,
     method: 'transferencia',
     concept: 'interes',
     imputation: 'interes',
-    toInterest: 60000,
+    toInterest: 50000,
     toCapital: 0,
     note: 'Solo interés mes 1',
     receiptNo: 'R-00004',
-    remainingCapital: 1500000,
-    remainingInterest: 200000 - 60000,
+    remainingCapital: 250000,
+    remainingInterest: 0,
   });
   payments.push({
     id: uid(),
     loanId: l2.id,
     date: addMonthsISO(l2.startDate, 2),
-    amount: 35000,
+    amount: 30000,
     method: 'efectivo',
     concept: 'interes',
     imputation: 'interes',
-    toInterest: 35000,
+    toInterest: 30000,
     toCapital: 0,
     note: 'Pago parcial - solo interés mes 2',
     receiptNo: 'R-00005',
-    remainingCapital: 1500000,
-    remainingInterest: 140000 - 35000,
+    remainingCapital: 250000,
+    remainingInterest: 0,
   });
 
-  // Ana: 2 cuota fija payments
-  const anaMonthly = (3000000 * 0.03) / (1 - Math.pow(1.03, -6));
+  // Ana: 2 cuota fija payments — 10% monthly, 600k, 6 months
+  const anaMonthly = (600000 * 0.10) / (1 - Math.pow(1.10, -6));
   for (let i = 1; i <= 2; i++) {
-    const interest = 3000000 * 0.03 * Math.pow(1.03, -(i - 1));
+    const interest = 600000 * 0.10 * Math.pow(1.10, -(i - 1));
     const cap = anaMonthly - interest;
     payments.push({
       id: uid(),
@@ -211,48 +226,48 @@ function seedData(): AppState {
       toCapital: Math.round(cap),
       note: `Cuota ${i} de 6`,
       receiptNo: `R-${String(5 + i).padStart(5, '0')}`,
-      remainingCapital: Math.round(3000000 - cap * i),
+      remainingCapital: Math.round(600000 - cap * i),
       remainingInterest: 0,
     });
   }
 
-  // Jorge: 4 weekly interest payments
-  const weeklyInterest = (800000 * 0.06) / 4.33;
+  // Jorge: 4 weekly interest payments — 20% of 150k / 4 = 7500
+  const weeklyInterest = (150000 * 0.20) / 4;
   for (let i = 1; i <= 4; i++) {
     payments.push({
       id: uid(),
       loanId: l4.id,
       date: addWeeksISO(l4.startDate, i),
-      amount: Math.round(weeklyInterest),
+      amount: Math.round(weeklyInterest / 100) * 100,
       method: 'efectivo',
       concept: 'interes',
       imputation: 'interes',
-      toInterest: Math.round(weeklyInterest),
+      toInterest: Math.round(weeklyInterest / 100) * 100,
       toCapital: 0,
       note: `Interés semana ${i}`,
       receiptNo: `R-${String(7 + i).padStart(5, '0')}`,
-      remainingCapital: 800000,
-      remainingInterest: Math.round(weeklyInterest * (9 - i)),
+      remainingCapital: 150000,
+      remainingInterest: 0,
     });
   }
 
-  // Luz Marina: 10 daily interest payments
-  const dailyInterest = (500000 * 0.10) / 30;
+  // Luz Marina: 10 daily interest payments — 30% of 100k / 30 = 1000
+  const dailyInterest = (100000 * 0.30) / 30;
   for (let i = 1; i <= 10; i++) {
     payments.push({
       id: uid(),
       loanId: l5.id,
       date: addDaysISO(l5.startDate, i),
-      amount: Math.round(dailyInterest),
+      amount: Math.round(dailyInterest / 100) * 100,
       method: 'efectivo',
       concept: 'interes',
       imputation: 'interes',
-      toInterest: Math.round(dailyInterest),
+      toInterest: Math.round(dailyInterest / 100) * 100,
       toCapital: 0,
       note: `Interés día ${i}`,
       receiptNo: `R-${String(11 + i).padStart(5, '0')}`,
-      remainingCapital: 500000,
-      remainingInterest: Math.round(dailyInterest * (30 - i)),
+      remainingCapital: 100000,
+      remainingInterest: 0,
     });
   }
 

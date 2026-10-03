@@ -83,7 +83,7 @@ export function ReceiptModal({ open, onClose, payment, client, loan }: Props) {
       `Saldo de interés pendiente: ${formatCurrency(payment.remainingInterest)}\n\n` +
       `¡Gracias por su pago!`;
     const phone = client.phone.replace(/\D/g, '');
-    const waNumber = phone.length === 10 ? '57' + phone : phone;
+    const waNumber = phone.length >= 10 ? '54' + phone : phone;
     window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank');
   };
 

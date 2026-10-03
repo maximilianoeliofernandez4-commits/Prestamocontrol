@@ -3,7 +3,7 @@ import type { Store } from '@/hooks/useStore';
 import { Card, Badge, ProgressBar, Button, EmptyState } from './ui';
 import { formatCurrency, formatDate, monthKey, todayISO } from '@/lib/format';
 import { computeSummary } from '@/lib/loan';
-import { Users, Wallet, TrendingUp, AlertCircle, ArrowRight, Search } from 'lucide-react';
+import { Users, Wallet, TrendingUp, AlertCircle, ArrowRight, Search, DollarSign } from 'lucide-react';
 
 interface Props {
   store: Store;
@@ -21,22 +21,30 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
 
     let monthInterest = 0;
     let totalInterestCollected = 0;
+    let totalCapitalReturned = 0;
+    let totalCapitalOut = 0;
     let clientsUpToDate = 0;
     let clientsPending = 0;
 
     const clientStatus = new Map<string, boolean>();
 
-    for (const loan of activeLoans) {
+    for (const loan of store.state.loans) {
       const summary = computeSummary(loan, store.state.payments);
       totalInterestCollected += summary.paidInterest;
+      totalCapitalReturned += summary.paidCapital;
+      if (loan.status === 'activa') {
+        totalCapitalOut += summary.remainingCapital;
+      }
 
       const monthPayments = store.state.payments
         .filter((p) => p.loanId === loan.id && monthKey(p.date) === currentMonth);
       monthInterest += monthPayments.reduce((s, p) => s + p.toInterest, 0);
 
-      const isUpToDate = summary.isSettled || summary.paymentCount > 0;
-      const prev = clientStatus.get(loan.clientId);
-      clientStatus.set(loan.clientId, prev !== undefined ? prev && isUpToDate : isUpToDate);
+      if (loan.status === 'activa') {
+        const isUpToDate = summary.isSettled || summary.paymentCount > 0;
+        const prev = clientStatus.get(loan.clientId);
+        clientStatus.set(loan.clientId, prev !== undefined ? prev && isUpToDate : isUpToDate);
+      }
     }
 
     for (const [, upToDate] of clientStatus) {
@@ -44,7 +52,16 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
       else clientsPending++;
     }
 
-    return { totalCapital, monthInterest, totalInterestCollected, clientsUpToDate, clientsPending, activeLoans: activeLoans.length };
+    return {
+      totalCapital,
+      monthInterest,
+      totalInterestCollected,
+      totalCapitalReturned,
+      totalCapitalOut,
+      clientsUpToDate,
+      clientsPending,
+      activeLoans: activeLoans.length,
+    };
   }, [store.state]);
 
   const filteredClients = useMemo(() => {
@@ -87,7 +104,7 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
         <Card className="p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-500">Intereses del Mes</p>
+              <p className="text-sm text-slate-500">Ganancia del Mes</p>
               <p className="mt-1 text-2xl font-bold text-emerald-600">{formatCurrency(stats.monthInterest)}</p>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
@@ -101,7 +118,7 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
             <div>
               <p className="text-sm text-slate-500">Clientes al Día</p>
               <p className="mt-1 text-2xl font-bold text-slate-900">{stats.clientsUpToDate}</p>
-              <p className="mt-0.5 text-xs text-emerald-600">{stats.clientsPending} pendientes</p>
+              <p className="mt-0.5 text-xs text-amber-500">{stats.clientsPending} pendientes</p>
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
               <Users size={22} />
@@ -117,6 +134,43 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
             </div>
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
               <AlertCircle size={22} />
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Capital vs Profit mini-summary */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+              <Wallet size={20} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Tu capital prestado (por cobrar)</p>
+              <p className="text-lg font-bold text-slate-900">{formatCurrency(stats.totalCapitalOut)}</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <TrendingUp size={20} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Ganancia total en intereses</p>
+              <p className="text-lg font-bold text-emerald-600">{formatCurrency(stats.totalInterestCollected)}</p>
+            </div>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+              <DollarSign size={20} />
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">Capital recuperado (disponible)</p>
+              <p className="text-lg font-bold text-sky-600">{formatCurrency(stats.totalCapitalReturned)}</p>
             </div>
           </div>
         </Card>

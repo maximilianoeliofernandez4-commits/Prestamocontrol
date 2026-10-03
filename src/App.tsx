@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '@/hooks/useStore';
 import { Dashboard } from '@/components/Dashboard';
+import { Analytics } from '@/components/Analytics';
 import { ClientDetail } from '@/components/ClientDetail';
 import { NewClientModal } from '@/components/NewClientModal';
 import { NewLoanModal } from '@/components/NewLoanModal';
@@ -8,11 +9,12 @@ import { PaymentModal } from '@/components/PaymentModal';
 import { ReceiptModal } from '@/components/ReceiptModal';
 import { Button } from '@/components/ui';
 import type { Client, Loan, Payment } from '@/types';
-import { Wallet, Search, Plus } from 'lucide-react';
+import { Wallet, Search, Plus, BarChart3, LayoutDashboard } from 'lucide-react';
 
 export default function App() {
   const store = useStore();
-  const [view, setView] = useState<'dashboard' | 'client'>('dashboard');
+  const [tab, setTab] = useState<'dashboard' | 'analytics'>('dashboard');
+  const [view, setView] = useState<'main' | 'client'>('main');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
@@ -44,6 +46,8 @@ export default function App() {
     setLastPayment(payment);
   };
 
+  const isClientView = view === 'client' && selectedClient;
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -60,6 +64,28 @@ export default function App() {
               </div>
             </div>
 
+            {/* Nav tabs - only on main view */}
+            {!isClientView && (
+              <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
+                <button
+                  onClick={() => setTab('dashboard')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    tab === 'dashboard' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <LayoutDashboard size={16} /> Panel
+                </button>
+                <button
+                  onClick={() => setTab('analytics')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    tab === 'analytics' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <BarChart3 size={16} /> Reportes
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowNewClient(true)}>
                 <Plus size={16} /> <span className="hidden sm:inline">Cliente</span>
@@ -70,8 +96,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Search bar - only on dashboard */}
-          {view === 'dashboard' && (
+          {/* Search bar - only on dashboard tab */}
+          {tab === 'dashboard' && !isClientView && (
             <div className="pb-3">
               <div className="relative max-w-md">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -90,7 +116,16 @@ export default function App() {
 
       {/* Content */}
       <main className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
-        {view === 'dashboard' && (
+        {isClientView ? (
+          <ClientDetail
+            store={store}
+            client={selectedClient}
+            onBack={() => { setView('main'); setSelectedClientId(null); }}
+            onNewLoan={handleNewLoanForClient}
+            onRegisterPayment={handleRegisterPayment}
+            onViewReceipt={(p) => setLastPayment(p)}
+          />
+        ) : tab === 'dashboard' ? (
           <Dashboard
             store={store}
             search={search}
@@ -98,17 +133,8 @@ export default function App() {
             onNewClient={() => setShowNewClient(true)}
             onNewLoan={() => { setLoanClient(null); setShowNewLoan(true); }}
           />
-        )}
-
-        {view === 'client' && selectedClient && (
-          <ClientDetail
-            store={store}
-            client={selectedClient}
-            onBack={() => { setView('dashboard'); setSelectedClientId(null); }}
-            onNewLoan={handleNewLoanForClient}
-            onRegisterPayment={handleRegisterPayment}
-            onViewReceipt={(p) => setLastPayment(p)}
-          />
+        ) : (
+          <Analytics store={store} />
         )}
       </main>
 
