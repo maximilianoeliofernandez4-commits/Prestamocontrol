@@ -14,9 +14,10 @@ interface Props {
   onEditLoan: (loan: Loan) => void;
   onRegisterPayment: (loan: Loan) => void;
   onViewReceipt: (payment: Payment) => void;
+  onEditPayment: (payment: Payment) => void;
 }
 
-export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onRegisterPayment, onViewReceipt }: Props) {
+export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onRegisterPayment, onViewReceipt, onEditPayment }: Props) {
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState<string | null>(null);
 
@@ -229,11 +230,15 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onR
                                 <button onClick={() => onViewReceipt(p)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
                                   <Receipt size={12} /> Recibo
                                 </button>
+                                <button onClick={() => onEditPayment(p)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                                  <Pencil size={12} /> Editar
+                                </button>
                                 <button
                                   onClick={() => {
                                     if (confirm('¿Eliminar este pago?')) store.deletePayment(p.id).catch(() => alert('Error al eliminar.'));
                                   }}
                                   className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                                  title="Eliminar pago"
                                 >
                                   <Trash2 size={14} />
                                 </button>

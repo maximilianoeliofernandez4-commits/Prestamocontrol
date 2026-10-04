@@ -52,11 +52,13 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
   const [showFunds, setShowFunds] = useState(false);
   const [loanForPayment, setLoanForPayment] = useState<Loan | null>(null);
   const [lastPayment, setLastPayment] = useState<Payment | null>(null);
+  const [paymentToEdit, setPaymentToEdit] = useState<Payment | null>(null);
   const [loanClient, setLoanClient] = useState<Client | null>(null);
   const [loanToEdit, setLoanToEdit] = useState<Loan | null>(null);
 
   const selectedClient = store.state.clients.find((c) => c.id === selectedClientId) ?? null;
-  const paymentClient = loanForPayment ? store.state.clients.find((c) => c.id === loanForPayment.clientId) ?? null : null;
+  const paymentLoan = (loanForPayment ?? (paymentToEdit ? store.state.loans.find((l) => l.id === paymentToEdit.loanId) ?? null : null));
+  const paymentClient = paymentLoan ? store.state.clients.find((c) => c.id === paymentLoan.clientId) ?? null : null;
   const lastPaymentLoan = lastPayment ? store.state.loans.find((l) => l.id === lastPayment.loanId) ?? null : null;
 
   const handleClientClick = (clientId: string) => {
@@ -201,6 +203,7 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
             onEditLoan={handleEditLoan}
             onRegisterPayment={handleRegisterPayment}
             onViewReceipt={(p) => setLastPayment(p)}
+            onEditPayment={(p) => setPaymentToEdit(p)}
           />
         ) : tab === 'dashboard' ? (
           <Dashboard
@@ -232,11 +235,12 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
         loan={loanToEdit}
       />
       <PaymentModal
-        open={!!loanForPayment}
-        onClose={() => setLoanForPayment(null)}
+        open={!!loanForPayment || !!paymentToEdit}
+        onClose={() => { setLoanForPayment(null); setPaymentToEdit(null); }}
         store={store}
-        loan={loanForPayment}
+        loan={paymentLoan}
         client={paymentClient}
+        payment={paymentToEdit}
         onPaymentRegistered={handlePaymentRegistered}
       />
       <ReceiptModal

@@ -197,6 +197,30 @@ export function useStore() {
     return payment;
   }, []);
 
+  const updatePayment = useCallback(async (id: string, data: Partial<Omit<Payment, 'id' | 'userId' | 'receiptNo'>>) => {
+    const update: Record<string, unknown> = {};
+    if (data.loanId !== undefined) update.loan_id = data.loanId;
+    if (data.date !== undefined) update.date = data.date;
+    if (data.amount !== undefined) update.amount = data.amount;
+    if (data.method !== undefined) update.method = data.method;
+    if (data.concept !== undefined) update.concept = data.concept;
+    if (data.imputation !== undefined) update.imputation = data.imputation;
+    if (data.toInterest !== undefined) update.to_interest = data.toInterest;
+    if (data.toCapital !== undefined) update.to_capital = data.toCapital;
+    if (data.note !== undefined) update.note = data.note;
+    if (data.remainingCapital !== undefined) update.remaining_capital = data.remainingCapital;
+    if (data.remainingInterest !== undefined) update.remaining_interest = data.remainingInterest;
+
+    const { data: row, error } = await supabase.from('payments').update(update).eq('id', id).select().single();
+    if (error) throw error;
+    const payment = mapPayment(row);
+    setState((s) => ({
+      ...s,
+      payments: s.payments.map((p) => (p.id === id ? payment : p)),
+    }));
+    return payment;
+  }, []);
+
   const deletePayment = useCallback(async (id: string) => {
     const { error } = await supabase.from('payments').delete().eq('id', id);
     if (error) throw error;
@@ -246,6 +270,7 @@ export function useStore() {
     updateLoan,
     deleteLoan,
     addPayment,
+    updatePayment,
     deletePayment,
     getLastPayment,
     addFund,

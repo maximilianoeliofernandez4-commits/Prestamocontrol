@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Modal, Input, Select, Textarea, Button, Badge, MoneyInput } from './ui';
 import type { Store } from '@/hooks/useStore';
 import type { Loan, PaymentMethod, PaymentImputation, Client, Payment } from '@/types';
@@ -11,25 +11,39 @@ interface Props {
   store: Store;
   loan: Loan | null;
   client: Client | null;
+  payment?: Payment | null;
   onPaymentRegistered: (payment: Payment) => void;
 }
 
-export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegistered }: Props) {
+export function PaymentModal({ open, onClose, store, loan, client, payment = null, onPaymentRegistered }: Props) {
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayISO());
   const [method, setMethod] = useState<PaymentMethod>('efectivo');
   const [imputation, setImputation] = useState<PaymentImputation>('auto');
   const [note, setNote] = useState('');
 
-  const summary = useMemo(() => (loan ? computeSummary(loan, store.state.payments) : null), [loan, store.state.payments]);
-  const next = useMemo(() => (loan ? nextInstallment(loan, store.state.payments) : null), [loan, store.state.payments]);
+  useEffect(() => {
+    if (!open) return;
+    setAmount(payment ? String(payment.amount) : '');
+    setDate(payment?.date ?? todayISO());
+    setMethod(payment?.method ?? 'efectivo');
+    setImputation(payment?.imputation ?? 'auto');
+    setNote(payment?.note ?? '');
+  }, [open, payment]);
+
+  const calculationPayments = useMemo(
+    () => store.state.payments.filter((item) => item.id !== payment?.id),
+    [store.state.payments, payment?.id],
+  );
+  const summary = useMemo(() => (loan ? computeSummary(loan, calculationPayments) : null), [loan, calculationPayments]);
+  const next = useMemo(() => (loan ? nextInstallment(loan, calculationPayments) : null), [loan, calculationPayments]);
 
   const payAmount = parseFloat(amount) || 0;
 
   const imputationPreview = useMemo(() => {
     if (!loan || payAmount <= 0) return null;
-    return imputePayment(loan, store.state.payments, payAmount, imputation);
-  }, [loan, payAmount, imputation, store.state.payments]);
+    return imputePayment(loan, calculationPayments, payAmount, imputation);
+  }, [loan, payAmount, imputation, calculationPayments]);
 
   const conceptLabels = {
     cuota: 'Cuota completa',
@@ -43,7 +57,7 @@ export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegi
     if (!loan || payAmount <= 0) return;
     const imp = imputationPreview!;
     try {
-      const payment = await store.addPayment({
+      const data = {
         loanId: loan.id,
         date,
         amount: payAmount,
@@ -55,8 +69,11 @@ export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegi
         note: note.trim(),
         remainingCapital: Math.max(0, summary!.remainingCapital - imp.toCapital),
         remainingInterest: Math.max(0, summary!.remainingInterest - imp.toInterest),
-      });
-      if (payment) onPaymentRegistered(payment);
+      };
+      const savedPayment = payment
+        ? await store.updatePayment(payment.id, data)
+        : await store.addPayment(data);
+      onPaymentRegistered(savedPayment);
       setAmount('');
       setNote('');
       setImputation('auto');
@@ -71,7 +88,7 @@ export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegi
   if (!loan || !client || !summary) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="Registrar Pago" size="lg">
+    <Modal open={open} onClose={onClose} title={payment ? 'Editar Pago' : 'Registrar Pago'} size="lg">
       <div className="mb-5 rounded-xl bg-slate-50 border border-slate-100 p-4">
         <div className="flex items-center justify-between">
           <div>
@@ -160,7 +177,7 @@ export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegi
 
         <div className="flex justify-end gap-3 pt-2">
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={payAmount <= 0}>Registrar y Generar Comprobante</Button>
+          <Button type="submit" disabled={payAmount <= 0}>{payment ? 'Guardar cambios' : 'Registrar y Generar Comprobante'}</Button>
         </div>
       </form>
     </Modal>

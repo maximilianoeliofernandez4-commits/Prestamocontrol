@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { Modal, Button } from './ui';
 import type { Payment, Client, Loan } from '@/types';
 import { formatCurrency, formatDateLong } from '@/lib/format';
@@ -13,14 +13,6 @@ interface Props {
 
 export function ReceiptModal({ open, onClose, payment, client, loan }: Props) {
   const receiptRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (open && payment) {
-      // Auto-trigger print dialog
-      const timer = setTimeout(() => handlePrint(), 300);
-      return () => clearTimeout(timer);
-    }
-  }, [open, payment]);
 
   const handlePrint = () => {
     if (!receiptRef.current) return;
