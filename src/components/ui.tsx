@@ -1,4 +1,5 @@
 import { clsx } from '@/lib/clsx';
+import { formatNumber, parseFormattedNumber } from '@/lib/format';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'outline';
@@ -30,10 +31,11 @@ export function Button({ variant = 'primary', size = 'md', className, children, 
 interface CardProps {
   children: React.ReactNode;
   className?: string;
+  onClick?: () => void;
 }
 
-export function Card({ children, className }: CardProps) {
-  return <div className={clsx('rounded-2xl bg-white border border-slate-200/80 shadow-sm', className)}>{children}</div>;
+export function Card({ children, className, onClick }: CardProps) {
+  return <div className={clsx('rounded-2xl bg-white border border-slate-200/80 shadow-sm', className)} onClick={onClick}>{children}</div>;
 }
 
 interface BadgeProps {
@@ -72,6 +74,34 @@ export function Input({ label, hint, className, ...props }: InputProps) {
           className,
         )}
         {...props}
+      />
+      {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
+    </label>
+  );
+}
+
+interface MoneyInputProps {
+  label?: string;
+  hint?: string;
+  value: string;
+  onChange: (rawValue: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+}
+
+export function MoneyInput({ label, hint, value, onChange, placeholder, autoFocus }: MoneyInputProps) {
+  const displayValue = value ? formatNumber(parseFormattedNumber(value)) : '';
+  return (
+    <label className="block">
+      {label && <span className="mb-1.5 block text-sm font-medium text-slate-700">{label}</span>}
+      <input
+        type="text"
+        inputMode="numeric"
+        value={displayValue}
+        onChange={(e) => onChange(String(parseFormattedNumber(e.target.value)))}
+        placeholder={placeholder ?? '0'}
+        autoFocus={autoFocus}
+        className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
       />
       {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
     </label>

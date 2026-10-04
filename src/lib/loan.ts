@@ -1,5 +1,5 @@
 import type { Loan, Payment, AmortizationRow, LoanSummary, PaymentFrequency } from '@/types';
-import { addPeriodsISO } from './format';
+import { addPeriodsISO, todayISO } from './format';
 
 const DAYS_PER_MONTH = 30;
 const WEEKS_PER_MONTH = 4;
@@ -32,14 +32,12 @@ export function effectiveMonths(loan: { termLength: number; frequency: PaymentFr
 }
 
 export function fixedPeriodPayment(capital: number, ratePctMonthly: number, termLength: number, frequency: PaymentFrequency): number {
-  const r = periodRateMonthly(ratePctMonthly, frequency);
-  const n = termLength;
-  if (r === 0) return capital / n;
-  return (capital * r) / (1 - Math.pow(1 + r, -n));
+  const totalInterest = capital * (ratePctMonthly / 100) * effectiveMonths({ termLength, frequency });
+  return (capital + totalInterest) / termLength;
 }
 
-function roundTo100(value: number): number {
-  return Math.round(value / 100) * 100;
+function roundTo1000(value: number): number {
+  return Math.ceil(value / 1000) * 1000;
 }
 
 export function generateSchedule(loan: Loan): AmortizationRow[] {
@@ -102,10 +100,16 @@ export function computeSummary(loan: Loan, payments: Payment[]): LoanSummary {
   let totalExpected: number;
 
   if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
-    // Interest is per-period and open-ended; total expected = capital + interest paid so far + next period interest
-    // For display purposes, use the per-period interest as the "expected" interest
+    // Count all periods that have elapsed since the loan start date up to today
+    const today = todayISO();
+    let elapsedPeriods = 0;
+    for (let period = 1; period < 10000; period += 1) {
+      const dueDate = addPeriodsISO(loan.startDate, period, loan.frequency);
+      if (dueDate > today) break;
+      elapsedPeriods += 1;
+    }
     const perPeriodInt = periodInterest(loan.capital, loan.interestRate, loan.frequency);
-    totalInterestExpected = paidInterest + perPeriodInt;
+    totalInterestExpected = Math.max(elapsedPeriods * perPeriodInt, paidInterest + perPeriodInt);
     totalExpected = loan.capital + totalInterestExpected;
   } else {
     const schedule = generateSchedule(loan);
@@ -131,10 +135,88 @@ export function computeSummary(loan: Loan, payments: Payment[]): LoanSummary {
   };
 }
 
+export interface OverduePeriod {
+  period: number;
+  dueDate: string;
+  amount: number;
+}
+
+export function overdueBreakdown(loan: Loan, payments: Payment[], today: string): OverduePeriod[] {
+  const loanPayments = payments.filter((p) => p.loanId === loan.id && p.date <= today);
+
+  if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
+    const fixedInterest = roundTo1000(periodInterest(loan.capital, loan.interestRate, loan.frequency));
+    const paidInterest = loanPayments.reduce((sum, payment) => sum + payment.toInterest, 0);
+    let remainingCredit = paidInterest;
+    const result: OverduePeriod[] = [];
+
+    for (let period = 1; period < 10000; period += 1) {
+      const dueDate = addPeriodsISO(loan.startDate, period, loan.frequency);
+      if (dueDate > today) break;
+      const applied = Math.min(fixedInterest, Math.max(0, remainingCredit));
+      remainingCredit -= applied;
+      const owed = fixedInterest - applied;
+      if (owed > 0) {
+        result.push({ period, dueDate, amount: owed >= fixedInterest ? fixedInterest : roundTo1000(owed) });
+      }
+    }
+    return result;
+  }
+
+  const schedule = generateSchedule(loan);
+  const dueRows = schedule.filter((row) => row.date <= today);
+  const paidInterest = loanPayments.reduce((sum, p) => sum + p.toInterest, 0);
+  const paidCapital = loanPayments.reduce((sum, p) => sum + p.toCapital, 0);
+  let interestCredit = paidInterest;
+  let capitalCredit = paidCapital;
+  const result: OverduePeriod[] = [];
+
+  for (const row of dueRows) {
+    const interestApplied = Math.min(row.interest, Math.max(0, interestCredit));
+    interestCredit -= interestApplied;
+    const capitalApplied = Math.min(row.capital, Math.max(0, capitalCredit));
+    capitalCredit -= capitalApplied;
+    const interestOwed = row.interest - interestApplied;
+    const capitalOwed = row.capital - capitalApplied;
+    if (interestOwed > 0 || capitalOwed > 0) {
+      result.push({ period: row.month, dueDate: row.date, amount: roundTo1000(interestOwed + capitalOwed) });
+    }
+  }
+  return result;
+}
+
+export function overdueDetails(loan: Loan, payments: Payment[], today: string): { amount: number; sinceDate: string } | null {
+  const loanPayments = payments.filter((p) => p.loanId === loan.id && p.date <= today);
+
+  if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
+    const fixedInterest = roundTo1000(periodInterest(loan.capital, loan.interestRate, loan.frequency));
+    let periodsDue = 0;
+    let firstDueDate = '';
+
+    for (let period = 1; period < 10000; period += 1) {
+      const dueDate = addPeriodsISO(loan.startDate, period, loan.frequency);
+      if (dueDate > today) break;
+      if (!firstDueDate) firstDueDate = dueDate;
+      periodsDue += 1;
+    }
+
+    const paidInterest = loanPayments.reduce((sum, payment) => sum + payment.toInterest, 0);
+    const amount = Math.max(0, periodsDue * fixedInterest - paidInterest);
+    return amount > 0 && firstDueDate ? { amount, sinceDate: firstDueDate } : null;
+  }
+
+  const breakdown = overdueBreakdown(loan, payments, today);
+  if (breakdown.length === 0) return null;
+  const amount = breakdown.reduce((sum, p) => sum + p.amount, 0);
+  return { amount, sinceDate: breakdown[0].dueDate };
+}
+
 export function nextInstallment(loan: Loan, payments: Payment[]): { month: number; amount: number; interest: number; capital: number; date: string } | null {
   const loanPayments = payments.filter((p) => p.loanId === loan.id);
   const paidCount = loanPayments.length;
   const r = periodRateMonthly(loan.interestRate, loan.frequency);
+  const paidCapital = loanPayments.reduce((sum, p) => sum + p.toCapital, 0);
+  const remainingCapital = Math.max(0, loan.capital - paidCapital);
   const perPeriodInterest = loan.capital * r;
 
   if (loan.modality === 'solo_interes' || loan.modality === 'personalizado') {
@@ -145,9 +227,9 @@ export function nextInstallment(loan: Loan, payments: Payment[]): { month: numbe
     const nextDate = addPeriodsISO(baseDate, 1, loan.frequency);
     return {
       month: paidCount + 1,
-      amount: roundTo100(perPeriodInterest),
-      interest: roundTo100(perPeriodInterest),
-      capital: loan.capital,
+      amount: roundTo1000(perPeriodInterest),
+      interest: roundTo1000(perPeriodInterest),
+      capital: remainingCapital,
       date: nextDate,
     };
   }
@@ -157,7 +239,7 @@ export function nextInstallment(loan: Loan, payments: Payment[]): { month: numbe
   const nextIdx = paidCount;
   if (nextIdx >= schedule.length) return null;
   const row = schedule[nextIdx];
-  return { month: row.month, amount: roundTo100(row.payment), interest: roundTo100(row.interest), capital: roundTo100(row.capital), date: row.date };
+  return { month: row.month, amount: roundTo1000(row.payment), interest: roundTo1000(row.interest), capital: roundTo1000(row.capital), date: row.date };
 }
 
 export function imputePayment(

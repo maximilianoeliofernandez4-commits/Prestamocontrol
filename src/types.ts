@@ -10,6 +10,7 @@ export type PaymentImputation = 'auto' | 'interes' | 'capital' | 'mixto';
 
 export interface Client {
   id: string;
+  userId: string;
   name: string;
   phone: string;
   notes: string;
@@ -18,6 +19,7 @@ export interface Client {
 
 export interface Payment {
   id: string;
+  userId: string;
   loanId: string;
   date: string;
   amount: number;
@@ -34,6 +36,7 @@ export interface Payment {
 
 export interface Loan {
   id: string;
+  userId: string;
   clientId: string;
   capital: number;
   startDate: string;
@@ -47,10 +50,23 @@ export interface Loan {
   note: string;
 }
 
+export type FundMovementType = 'aporte' | 'retiro';
+
+export interface CapitalFund {
+  id: string;
+  userId: string;
+  amount: number;
+  type: FundMovementType;
+  date: string;
+  note: string;
+  createdAt: string;
+}
+
 export interface AppState {
   clients: Client[];
   loans: Loan[];
   payments: Payment[];
+  funds: CapitalFund[];
   receiptCounter: number;
 }
 

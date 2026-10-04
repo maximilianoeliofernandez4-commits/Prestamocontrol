@@ -13,6 +13,11 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.round(value));
 }
 
+export function parseFormattedNumber(text: string): number {
+  const cleaned = text.replace(/\./g, '').replace(/[^\d]/g, '');
+  return parseInt(cleaned) || 0;
+}
+
 export function formatDate(iso: string): string {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');

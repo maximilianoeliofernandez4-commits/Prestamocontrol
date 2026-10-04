@@ -13,14 +13,18 @@ export function NewClientModal({ open, onClose, store }: Props) {
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    store.addClient({ name: name.trim(), phone: phone.trim(), notes: notes.trim() });
-    setName('');
-    setPhone('');
-    setNotes('');
-    onClose();
+    try {
+      await store.addClient({ name: name.trim(), phone: phone.trim(), notes: notes.trim() });
+      setName('');
+      setPhone('');
+      setNotes('');
+      onClose();
+    } catch {
+      alert('Error al guardar el cliente. Intentá de nuevo.');
+    }
   };
 
   return (

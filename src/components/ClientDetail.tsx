@@ -4,18 +4,19 @@ import { Card, Badge, Button, ProgressBar, EmptyState } from './ui';
 import { formatCurrency, formatDate, todayISO } from '@/lib/format';
 import { computeSummary, nextInstallment, generateSchedule, freqBadgeText, periodLabel, periodsLabel, effectiveMonths } from '@/lib/loan';
 import type { Loan, Payment, Client } from '@/types';
-import { ArrowLeft, Phone, Plus, Wallet, Receipt, Trash2, FileText, Calendar, TrendingUp, UserMinus } from 'lucide-react';
+import { ArrowLeft, Phone, Plus, Wallet, Receipt, Trash2, FileText, Calendar, TrendingUp, UserMinus, Pencil } from 'lucide-react';
 
 interface Props {
   store: Store;
   client: Client;
   onBack: () => void;
   onNewLoan: (client: Client) => void;
+  onEditLoan: (loan: Loan) => void;
   onRegisterPayment: (loan: Loan) => void;
   onViewReceipt: (payment: Payment) => void;
 }
 
-export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayment, onViewReceipt }: Props) {
+export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onRegisterPayment, onViewReceipt }: Props) {
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState<string | null>(null);
 
@@ -45,8 +46,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
 
   const handleDeleteClient = () => {
     if (confirm(`¿Eliminar a ${client.name} y todos sus préstamos y pagos? Esta acción no se puede deshacer.`)) {
-      store.deleteClient(client.id);
-      onBack();
+      store.deleteClient(client.id).then(() => onBack()).catch(() => alert('Error al eliminar.'));
     }
   };
 
@@ -127,11 +127,16 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                       </p>
                       {loan.note && <p className="mt-1 text-xs text-slate-400">{loan.note}</p>}
                     </div>
-                    {!summary.isSettled && (
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => onEditLoan(loan)}>
+                        <Pencil size={15} /> Editar
+                      </Button>
+                      {!summary.isSettled && (
                       <Button size="sm" onClick={() => onRegisterPayment(loan)}>
                         <Receipt size={16} /> Registrar Pago
                       </Button>
                     )}
+                  </div>
                   </div>
 
                   {/* Progress */}
@@ -183,7 +188,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                     )}
                     <button
                       onClick={() => {
-                        if (confirm('¿Eliminar este préstamo y todos sus pagos?')) store.deleteLoan(loan.id);
+                        if (confirm('¿Eliminar este préstamo y todos sus pagos?')) store.deleteLoan(loan.id).catch(() => alert('Error al eliminar.'));
                       }}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50"
                     >
@@ -226,7 +231,7 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onRegisterPayme
                                 </button>
                                 <button
                                   onClick={() => {
-                                    if (confirm('¿Eliminar este pago?')) store.deletePayment(p.id);
+                                    if (confirm('¿Eliminar este pago?')) store.deletePayment(p.id).catch(() => alert('Error al eliminar.'));
                                   }}
                                   className="rounded-lg p-1.5 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
                                 >

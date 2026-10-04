@@ -2,8 +2,8 @@ import { useMemo } from 'react';
 import type { Store } from '@/hooks/useStore';
 import { Card, Badge, ProgressBar, Button, EmptyState } from './ui';
 import { formatCurrency, formatDate, monthKey, todayISO } from '@/lib/format';
-import { computeSummary } from '@/lib/loan';
-import { Users, Wallet, TrendingUp, AlertCircle, ArrowRight, Search, DollarSign } from 'lucide-react';
+import { computeSummary, overdueDetails, nextInstallment } from '@/lib/loan';
+import { Users, Wallet, TrendingUp, AlertCircle, ArrowRight, Search, DollarSign, CalendarClock } from 'lucide-react';
 
 interface Props {
   store: Store;
@@ -20,7 +20,6 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
     const currentMonth = monthKey(todayISO());
 
     let monthInterest = 0;
-    let totalInterestCollected = 0;
     let totalCapitalReturned = 0;
     let totalCapitalOut = 0;
     let clientsUpToDate = 0;
@@ -30,7 +29,6 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
 
     for (const loan of store.state.loans) {
       const summary = computeSummary(loan, store.state.payments);
-      totalInterestCollected += summary.paidInterest;
       totalCapitalReturned += summary.paidCapital;
       if (loan.status === 'activa') {
         totalCapitalOut += summary.remainingCapital;
@@ -41,7 +39,8 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
       monthInterest += monthPayments.reduce((s, p) => s + p.toInterest, 0);
 
       if (loan.status === 'activa') {
-        const isUpToDate = summary.isSettled || summary.paymentCount > 0;
+        const overdue = overdueDetails(loan, store.state.payments, todayISO());
+        const isUpToDate = summary.isSettled || (summary.paymentCount > 0 && !overdue);
         const prev = clientStatus.get(loan.clientId);
         clientStatus.set(loan.clientId, prev !== undefined ? prev && isUpToDate : isUpToDate);
       }
@@ -55,7 +54,6 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
     return {
       totalCapital,
       monthInterest,
-      totalInterestCollected,
       totalCapitalReturned,
       totalCapitalOut,
       clientsUpToDate,
@@ -79,6 +77,28 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
         const client = loan ? store.state.clients.find((c) => c.id === loan.clientId) : null;
         return { payment: p, client, loan };
       });
+  }, [store.state]);
+
+  const upcomingPayments = useMemo(() => {
+    const today = todayISO();
+    const items: { clientName: string; clientId: string; date: string; amount: number; freqLabel: string; isOverdue: boolean }[] = [];
+    for (const loan of store.state.loans.filter((l) => l.status === 'activa')) {
+      const next = nextInstallment(loan, store.state.payments);
+      if (!next) continue;
+      const client = store.state.clients.find((c) => c.id === loan.clientId);
+      if (!client) continue;
+      const overdue = overdueDetails(loan, store.state.payments, today);
+      const freqLabel = loan.frequency === 'diario' ? 'Diario' : loan.frequency === 'semanal' ? 'Semanal' : 'Mensual';
+      items.push({
+        clientName: client.name,
+        clientId: client.id,
+        date: next.date,
+        amount: next.amount,
+        freqLabel,
+        isOverdue: !!overdue || next.date < today,
+      });
+    }
+    return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
   }, [store.state]);
 
   const clientLoans = (clientId: string) => {
@@ -158,8 +178,8 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
               <TrendingUp size={20} />
             </div>
             <div>
-              <p className="text-xs text-slate-400">Ganancia total en intereses</p>
-              <p className="text-lg font-bold text-emerald-600">{formatCurrency(stats.totalInterestCollected)}</p>
+              <p className="text-xs text-slate-400">Ganancia de este mes</p>
+              <p className="text-lg font-bold text-emerald-600">{formatCurrency(stats.monthInterest)}</p>
             </div>
           </div>
         </Card>
@@ -174,6 +194,53 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
             </div>
           </div>
         </Card>
+      </div>
+
+      {/* Upcoming Payments */}
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <CalendarClock size={20} className="text-teal-600" />
+          <h2 className="text-lg font-bold text-slate-900">Próximos Cobros</h2>
+        </div>
+        {upcomingPayments.length === 0 ? (
+          <Card className="p-6 text-center">
+            <p className="text-sm text-slate-400">No hay cobros próximos registrados</p>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {upcomingPayments.map((item, idx) => {
+              const isOverdue = item.isOverdue;
+              const dateObj = new Date(item.date + 'T00:00:00');
+              const today = new Date(todayISO() + 'T00:00:00');
+              const diffDays = Math.round((dateObj.getTime() - today.getTime()) / 86400000);
+              const dayLabel = isOverdue
+                ? diffDays === 0 ? 'Hoy' : `${Math.abs(diffDays)} días atrasado${Math.abs(diffDays) !== 1 ? 's' : ''}`
+                : diffDays === 0 ? 'Hoy' : diffDays === 1 ? 'Mañana' : `En ${diffDays} días`;
+              return (
+                <Card
+                  key={idx}
+                  className={`p-4 cursor-pointer transition-all hover:shadow-md ${isOverdue ? 'border-amber-200 bg-amber-50/30' : ''}`}
+                  onClick={() => onClientClick(item.clientId)}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 text-sm truncate">{item.clientName}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{formatDate(item.date)}</p>
+                    </div>
+                    {isOverdue && <Badge variant="danger">Atrasado</Badge>}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="text-lg font-bold text-slate-900">{formatCurrency(item.amount)}</span>
+                    <span className={`text-xs font-medium ${isOverdue ? 'text-amber-600' : 'text-slate-400'}`}>{dayLabel}</span>
+                  </div>
+                  <div className="mt-1">
+                    <span className="text-[11px] text-slate-400">{item.freqLabel}</span>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -198,7 +265,8 @@ export function Dashboard({ store, search, onClientClick, onNewClient, onNewLoan
                 const totalRemaining = loans.reduce((s, l) => s + computeSummary(l, store.state.payments).remainingCapital, 0);
                 const hasPending = loans.some((l) => {
                   const sum = computeSummary(l, store.state.payments);
-                  return !sum.isSettled && sum.remainingInterest > 0;
+                  const overdue = overdueDetails(l, store.state.payments, todayISO());
+                  return !sum.isSettled && (sum.remainingInterest > 0 || !!overdue);
                 });
                 return (
                   <Card key={client.id} className="p-4 transition-all hover:shadow-md cursor-pointer group" >

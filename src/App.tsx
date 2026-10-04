@@ -1,28 +1,59 @@
 import { useState } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { useStore } from '@/hooks/useStore';
 import { Dashboard } from '@/components/Dashboard';
 import { Analytics } from '@/components/Analytics';
+import { LoanCalculator } from '@/components/LoanCalculator';
 import { ClientDetail } from '@/components/ClientDetail';
 import { NewClientModal } from '@/components/NewClientModal';
 import { NewLoanModal } from '@/components/NewLoanModal';
 import { PaymentModal } from '@/components/PaymentModal';
 import { ReceiptModal } from '@/components/ReceiptModal';
+import { AddFundsModal } from '@/components/AddFundsModal';
+import { AuthScreen } from '@/components/AuthScreen';
+import { AdminPanel } from '@/components/AdminPanel';
 import { Button } from '@/components/ui';
 import type { Client, Loan, Payment } from '@/types';
-import { Wallet, Search, Plus, BarChart3, LayoutDashboard } from 'lucide-react';
+import { Wallet, Search, Plus, BarChart3, LayoutDashboard, LogOut, Shield, PiggyBank, Calculator } from 'lucide-react';
 
 export default function App() {
+  const { session, profile, loading: authLoading, signOut } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 text-white shadow-sm">
+            <Wallet size={24} />
+          </div>
+          <p className="text-sm text-slate-400">Cargando...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthScreen />;
+  }
+
+  return <MainApp onSignOut={signOut} profileName={profile?.display_name || profile?.email || ''} isAdmin={profile?.role === 'admin'} />;
+}
+
+function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise<void>; profileName: string; isAdmin: boolean }) {
   const store = useStore();
-  const [tab, setTab] = useState<'dashboard' | 'analytics'>('dashboard');
+  const effectiveIsAdmin = isAdmin || store.isAdmin;
+  const [tab, setTab] = useState<'dashboard' | 'analytics' | 'admin' | 'calculator'>('dashboard');
   const [view, setView] = useState<'main' | 'client'>('main');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   const [showNewClient, setShowNewClient] = useState(false);
   const [showNewLoan, setShowNewLoan] = useState(false);
+  const [showFunds, setShowFunds] = useState(false);
   const [loanForPayment, setLoanForPayment] = useState<Loan | null>(null);
   const [lastPayment, setLastPayment] = useState<Payment | null>(null);
   const [loanClient, setLoanClient] = useState<Client | null>(null);
+  const [loanToEdit, setLoanToEdit] = useState<Loan | null>(null);
 
   const selectedClient = store.state.clients.find((c) => c.id === selectedClientId) ?? null;
   const paymentClient = loanForPayment ? store.state.clients.find((c) => c.id === loanForPayment.clientId) ?? null : null;
@@ -42,18 +73,30 @@ export default function App() {
     setLoanForPayment(loan);
   };
 
+  const handleEditLoan = (loan: Loan) => {
+    setLoanToEdit(loan);
+  };
+
   const handlePaymentRegistered = (payment: Payment) => {
     setLastPayment(payment);
   };
 
   const isClientView = view === 'client' && selectedClient;
 
+  if (store.loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <p className="text-sm text-slate-400">Cargando datos...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur-md">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex h-16 items-center justify-between gap-4">
+          <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 py-2">
             <div className="flex items-center gap-2.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 text-white shadow-sm shadow-teal-600/20">
                 <Wallet size={20} />
@@ -66,7 +109,7 @@ export default function App() {
 
             {/* Nav tabs - only on main view */}
             {!isClientView && (
-              <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
+              <div className="order-3 flex w-full min-w-0 items-center gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 md:order-none md:w-auto md:max-w-full">
                 <button
                   onClick={() => setTab('dashboard')}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -83,16 +126,49 @@ export default function App() {
                 >
                   <BarChart3 size={16} /> Reportes
                 </button>
+                <button
+                  onClick={() => setTab('calculator')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    tab === 'calculator' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Calculator size={16} /> Calculadora
+                </button>
+                {effectiveIsAdmin && (
+                  <button
+                    onClick={() => setTab('admin')}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                      tab === 'admin' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Shield size={16} /> Admin
+                  </button>
+                )}
               </div>
             )}
 
             <div className="flex items-center gap-2">
+              {effectiveIsAdmin && (
+                <span className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2 py-1 text-xs font-medium text-teal-700">
+                  <Shield size={14} /> Admin
+                </span>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setShowFunds(true)}>
+                <PiggyBank size={16} /> <span className="hidden sm:inline">Mi Fondo</span>
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setShowNewClient(true)}>
                 <Plus size={16} /> <span className="hidden sm:inline">Cliente</span>
               </Button>
               <Button size="sm" onClick={() => { setLoanClient(null); setShowNewLoan(true); }}>
                 <Plus size={16} /> <span className="hidden sm:inline">Préstamo</span>
               </Button>
+              <button
+                onClick={onSignOut}
+                title="Cerrar sesión"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           </div>
 
@@ -122,6 +198,7 @@ export default function App() {
             client={selectedClient}
             onBack={() => { setView('main'); setSelectedClientId(null); }}
             onNewLoan={handleNewLoanForClient}
+            onEditLoan={handleEditLoan}
             onRegisterPayment={handleRegisterPayment}
             onViewReceipt={(p) => setLastPayment(p)}
           />
@@ -133,14 +210,27 @@ export default function App() {
             onNewClient={() => setShowNewClient(true)}
             onNewLoan={() => { setLoanClient(null); setShowNewLoan(true); }}
           />
+        ) : tab === 'admin' && effectiveIsAdmin ? (
+          <AdminPanel store={store} />
+        ) : tab === 'calculator' ? (
+          <LoanCalculator />
         ) : (
           <Analytics store={store} />
         )}
       </main>
 
       {/* Modals */}
+      <AddFundsModal open={showFunds} onClose={() => setShowFunds(false)} store={store} />
       <NewClientModal open={showNewClient} onClose={() => setShowNewClient(false)} store={store} />
       <NewLoanModal open={showNewLoan} onClose={() => setShowNewLoan(false)} store={store} client={loanClient} fixedClient={!!loanClient} />
+      <NewLoanModal
+        open={!!loanToEdit}
+        onClose={() => setLoanToEdit(null)}
+        store={store}
+        client={loanToEdit ? store.state.clients.find((c) => c.id === loanToEdit.clientId) ?? null : null}
+        fixedClient
+        loan={loanToEdit}
+      />
       <PaymentModal
         open={!!loanForPayment}
         onClose={() => setLoanForPayment(null)}

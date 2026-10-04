@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Modal, Input, Select, Textarea, Button, Badge } from './ui';
+import { Modal, Input, Select, Textarea, Button, Badge, MoneyInput } from './ui';
 import type { Store } from '@/hooks/useStore';
 import type { Loan, PaymentMethod, PaymentImputation, Client, Payment } from '@/types';
 import { formatCurrency, formatDate, todayISO } from '@/lib/format';
@@ -38,28 +38,32 @@ export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegi
     mixto: 'Pago mixto (interés + capital)',
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loan || payAmount <= 0) return;
     const imp = imputationPreview!;
-    const payment = store.addPayment({
-      loanId: loan.id,
-      date,
-      amount: payAmount,
-      method,
-      concept: imp.concept,
-      imputation,
-      toInterest: imp.toInterest,
-      toCapital: imp.toCapital,
-      note: note.trim(),
-      remainingCapital: Math.max(0, summary!.remainingCapital - imp.toCapital),
-      remainingInterest: Math.max(0, summary!.remainingInterest - imp.toInterest),
-    });
-    if (payment) onPaymentRegistered(payment);
-    setAmount('');
-    setNote('');
-    setImputation('auto');
-    onClose();
+    try {
+      const payment = await store.addPayment({
+        loanId: loan.id,
+        date,
+        amount: payAmount,
+        method,
+        concept: imp.concept,
+        imputation,
+        toInterest: imp.toInterest,
+        toCapital: imp.toCapital,
+        note: note.trim(),
+        remainingCapital: Math.max(0, summary!.remainingCapital - imp.toCapital),
+        remainingInterest: Math.max(0, summary!.remainingInterest - imp.toInterest),
+      });
+      if (payment) onPaymentRegistered(payment);
+      setAmount('');
+      setNote('');
+      setImputation('auto');
+      onClose();
+    } catch {
+      alert('Error al registrar el pago. Intentá de nuevo.');
+    }
   };
 
   const setQuickAmount = (val: number) => setAmount(String(Math.round(val)));
@@ -97,7 +101,7 @@ export function PaymentModal({ open, onClose, store, loan, client, onPaymentRegi
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label="Monto del pago ($ ARS) *" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" autoFocus />
+        <MoneyInput label="Monto del pago ($ ARS) *" value={amount} onChange={setAmount} placeholder="0" autoFocus />
 
         {next && (
           <div className="flex flex-wrap gap-2">
