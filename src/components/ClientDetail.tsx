@@ -12,12 +12,13 @@ interface Props {
   onBack: () => void;
   onNewLoan: (client: Client) => void;
   onEditLoan: (loan: Loan) => void;
+  onEditClient: (client: Client) => void;
   onRegisterPayment: (loan: Loan) => void;
   onViewReceipt: (payment: Payment) => void;
   onEditPayment: (payment: Payment) => void;
 }
 
-export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onRegisterPayment, onViewReceipt, onEditPayment }: Props) {
+export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onEditClient, onRegisterPayment, onViewReceipt, onEditPayment }: Props) {
   const [expandedLoan, setExpandedLoan] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState<string | null>(null);
 
@@ -76,6 +77,9 @@ export function ClientDetail({ store, client, onBack, onNewLoan, onEditLoan, onR
               </div>
             </div>
             <div className="flex gap-2">
+              <Button variant="outline" size="md" onClick={() => onEditClient(client)} title="Editar cliente">
+                <Pencil size={18} />
+              </Button>
               <Button onClick={() => onNewLoan(client)}>
                 <Plus size={18} /> Nuevo Préstamo
               </Button>

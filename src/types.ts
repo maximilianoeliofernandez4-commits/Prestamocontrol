@@ -50,6 +50,25 @@ export interface Loan {
   note: string;
 }
 
+export type InvitationStatus = 'pendiente' | 'completado' | 'confirmado' | 'vencido';
+
+export interface ClientInvitation {
+  id: string;
+  userId: string;
+  token: string;
+  status: InvitationStatus;
+  prospectName: string;
+  prospectPhone: string;
+  prospectDni: string;
+  prospectAddress: string;
+  prospectPhotoUrl: string;
+  lenderNote: string;
+  createdClientId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  confirmedAt: string | null;
+}
+
 export type FundMovementType = 'aporte' | 'retiro';
 
 export interface CapitalFund {

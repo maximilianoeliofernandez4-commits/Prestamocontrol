@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStore } from '@/hooks/useStore';
 import { Dashboard } from '@/components/Dashboard';
@@ -6,18 +6,42 @@ import { Analytics } from '@/components/Analytics';
 import { LoanCalculator } from '@/components/LoanCalculator';
 import { ClientDetail } from '@/components/ClientDetail';
 import { NewClientModal } from '@/components/NewClientModal';
+import { EditClientModal } from '@/components/EditClientModal';
 import { NewLoanModal } from '@/components/NewLoanModal';
 import { PaymentModal } from '@/components/PaymentModal';
 import { ReceiptModal } from '@/components/ReceiptModal';
 import { AddFundsModal } from '@/components/AddFundsModal';
 import { AuthScreen } from '@/components/AuthScreen';
 import { AdminPanel } from '@/components/AdminPanel';
+import { InvitationsPanel } from '@/components/InvitationsPanel';
+import { PublicInvitationForm } from '@/components/PublicInvitationForm';
 import { Button } from '@/components/ui';
 import type { Client, Loan, Payment } from '@/types';
-import { Wallet, Search, Plus, BarChart3, LayoutDashboard, LogOut, Shield, PiggyBank, Calculator } from 'lucide-react';
+import { Wallet, Search, Plus, BarChart3, LayoutDashboard, LogOut, Shield, PiggyBank, Calculator, UserPlus } from 'lucide-react';
 
 export default function App() {
   const { session, profile, loading: authLoading, signOut } = useAuth();
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkHash = () => {
+      const hash = window.location.hash;
+      const match = hash.match(/^#\/invitar\/([a-f0-9]+)/);
+      if (match) {
+        setInviteToken(match[1]);
+      } else {
+        setInviteToken(null);
+      }
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
+
+  // Public invitation form — no login required
+  if (inviteToken) {
+    return <PublicInvitationForm token={inviteToken} />;
+  }
 
   if (authLoading) {
     return (
@@ -42,7 +66,7 @@ export default function App() {
 function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise<void>; profileName: string; isAdmin: boolean }) {
   const store = useStore();
   const effectiveIsAdmin = isAdmin || store.isAdmin;
-  const [tab, setTab] = useState<'dashboard' | 'analytics' | 'admin' | 'calculator'>('dashboard');
+  const [tab, setTab] = useState<'dashboard' | 'analytics' | 'admin' | 'calculator' | 'invitaciones'>('dashboard');
   const [view, setView] = useState<'main' | 'client'>('main');
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -55,6 +79,7 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
   const [paymentToEdit, setPaymentToEdit] = useState<Payment | null>(null);
   const [loanClient, setLoanClient] = useState<Client | null>(null);
   const [loanToEdit, setLoanToEdit] = useState<Loan | null>(null);
+  const [clientToEdit, setClientToEdit] = useState<Client | null>(null);
 
   const selectedClient = store.state.clients.find((c) => c.id === selectedClientId) ?? null;
   const paymentLoan = (loanForPayment ?? (paymentToEdit ? store.state.loans.find((l) => l.id === paymentToEdit.loanId) ?? null : null));
@@ -81,6 +106,12 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
 
   const handlePaymentRegistered = (payment: Payment) => {
     setLastPayment(payment);
+  };
+
+  const handleConfirmInvitation = (client: Client) => {
+    setLoanClient(client);
+    setShowNewLoan(true);
+    setTab('dashboard');
   };
 
   const isClientView = view === 'client' && selectedClient;
@@ -135,6 +166,14 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
                   }`}
                 >
                   <Calculator size={16} /> Calculadora
+                </button>
+                <button
+                  onClick={() => setTab('invitaciones')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    tab === 'invitaciones' ? 'bg-white text-teal-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <UserPlus size={16} /> Solicitudes
                 </button>
                 {effectiveIsAdmin && (
                   <button
@@ -201,6 +240,7 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
             onBack={() => { setView('main'); setSelectedClientId(null); }}
             onNewLoan={handleNewLoanForClient}
             onEditLoan={handleEditLoan}
+            onEditClient={(c) => setClientToEdit(c)}
             onRegisterPayment={handleRegisterPayment}
             onViewReceipt={(p) => setLastPayment(p)}
             onEditPayment={(p) => setPaymentToEdit(p)}
@@ -213,6 +253,8 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
             onNewClient={() => setShowNewClient(true)}
             onNewLoan={() => { setLoanClient(null); setShowNewLoan(true); }}
           />
+        ) : tab === 'invitaciones' ? (
+          <InvitationsPanel store={store} onConfirmAndCreateLoan={handleConfirmInvitation} />
         ) : tab === 'admin' && effectiveIsAdmin ? (
           <AdminPanel store={store} />
         ) : tab === 'calculator' ? (
@@ -225,6 +267,7 @@ function MainApp({ onSignOut, profileName, isAdmin }: { onSignOut: () => Promise
       {/* Modals */}
       <AddFundsModal open={showFunds} onClose={() => setShowFunds(false)} store={store} />
       <NewClientModal open={showNewClient} onClose={() => setShowNewClient(false)} store={store} />
+      <EditClientModal open={!!clientToEdit} onClose={() => setClientToEdit(null)} store={store} client={clientToEdit} />
       <NewLoanModal open={showNewLoan} onClose={() => setShowNewLoan(false)} store={store} client={loanClient} fixedClient={!!loanClient} />
       <NewLoanModal
         open={!!loanToEdit}

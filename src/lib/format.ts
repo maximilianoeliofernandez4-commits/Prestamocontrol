@@ -75,9 +75,11 @@ export function monthKey(iso: string): string {
   return iso.slice(0, 7);
 }
 
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
 export function monthLabel(iso: string): string {
-  const d = new Date(iso + '-01T00:00:00');
-  return d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' });
+  const [year, month] = iso.slice(0, 7).split('-').map(Number);
+  return `${MONTH_NAMES[month - 1]} ${year}`;
 }
 
 export function uid(): string {

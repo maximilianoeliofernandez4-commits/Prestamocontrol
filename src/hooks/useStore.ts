@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { AppState, Client, Loan, Payment, CapitalFund, FundMovementType } from '@/types';
+import type { AppState, Client, Loan, Payment, CapitalFund, FundMovementType, ClientInvitation } from '@/types';
 import type { UserProfile } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
@@ -13,6 +13,7 @@ export function useStore() {
   const [profiles, setProfiles] = useState<Record<string, UserProfile>>({});
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [invitations, setInvitations] = useState<ClientInvitation[]>([]);
 
   // Load all data from Supabase
   const loadData = useCallback(async () => {
@@ -46,11 +47,12 @@ export function useStore() {
     const adminFromProfilesMap = currentProfile?.role === 'admin';
     setIsAdmin(adminFromProfile || adminFromProfilesMap);
 
-    const [clientsRes, loansRes, paymentsRes, fundsRes] = await Promise.all([
+    const [clientsRes, loansRes, paymentsRes, fundsRes, invitesRes] = await Promise.all([
       supabase.from('clients').select('*').order('created_at', { ascending: true }),
       supabase.from('loans').select('*').order('created_at', { ascending: true }),
       supabase.from('payments').select('*').order('date', { ascending: true }),
       supabase.from('capital_funds').select('*').order('date', { ascending: false }),
+      supabase.from('client_invitations').select('*').order('created_at', { ascending: false }),
     ]);
 
     setState({
@@ -60,6 +62,7 @@ export function useStore() {
       funds: (fundsRes.data ?? []).map(mapFund),
       receiptCounter: 0,
     });
+    setInvitations((invitesRes.data ?? []).map(mapInvitation));
 
     setLoading(false);
   }, [session?.user?.id, profile?.role]);
@@ -258,11 +261,59 @@ export function useStore() {
     setState((s) => ({ ...s, funds: s.funds.filter((f) => f.id !== id) }));
   }, []);
 
+  const createInvitation = useCallback(async (note?: string) => {
+    const { data: row, error } = await supabase
+      .from('client_invitations')
+      .insert({ lender_note: note ?? '' })
+      .select()
+      .single();
+    if (error) throw error;
+    const inv = mapInvitation(row);
+    setInvitations((prev) => [inv, ...prev]);
+    return inv;
+  }, []);
+
+  const confirmInvitation = useCallback(async (invitationId: string): Promise<Client | null> => {
+    const { data: clientId, error } = await supabase.rpc('confirm_invitation', { p_invitation_id: invitationId });
+    if (error) throw error;
+    if (!clientId) return null;
+
+    // Fetch the newly created client
+    const { data: clientRow, error: clientErr } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('id', clientId)
+      .single();
+    if (clientErr) throw clientErr;
+    const client = mapClient(clientRow);
+
+    // Update local state
+    setState((s) => ({ ...s, clients: [...s.clients, client] }));
+    setInvitations((prev) => prev.map((inv) =>
+      inv.id === invitationId
+        ? { ...inv, status: 'confirmado', createdClientId: String(clientId), confirmedAt: new Date().toISOString() }
+        : inv
+    ));
+    return client;
+  }, []);
+
+  const cancelInvitation = useCallback(async (invitationId: string) => {
+    const { error } = await supabase
+      .from('client_invitations')
+      .update({ status: 'vencido' })
+      .eq('id', invitationId);
+    if (error) throw error;
+    setInvitations((prev) => prev.map((inv) =>
+      inv.id === invitationId ? { ...inv, status: 'vencido' } : inv
+    ));
+  }, []);
+
   return {
     state,
     loading,
     isAdmin,
     profiles,
+    invitations,
     addClient,
     updateClient,
     deleteClient,
@@ -275,6 +326,9 @@ export function useStore() {
     getLastPayment,
     addFund,
     deleteFund,
+    createInvitation,
+    confirmInvitation,
+    cancelInvitation,
   };
 }
 
@@ -288,6 +342,25 @@ function mapClient(row: Record<string, unknown>): Client {
     phone: String(row.phone ?? ''),
     notes: String(row.notes ?? ''),
     createdAt: String(row.created_at ?? ''),
+  };
+}
+
+function mapInvitation(row: Record<string, unknown>): ClientInvitation {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id ?? ''),
+    token: String(row.token ?? ''),
+    status: (row.status as ClientInvitation['status']) ?? 'pendiente',
+    prospectName: String(row.prospect_name ?? ''),
+    prospectPhone: String(row.prospect_phone ?? ''),
+    prospectDni: String(row.prospect_dni ?? ''),
+    prospectAddress: String(row.prospect_address ?? ''),
+    prospectPhotoUrl: String(row.prospect_photo_url ?? ''),
+    lenderNote: String(row.lender_note ?? ''),
+    createdClientId: row.created_client_id ? String(row.created_client_id) : null,
+    createdAt: String(row.created_at ?? ''),
+    completedAt: row.completed_at ? String(row.completed_at) : null,
+    confirmedAt: row.confirmed_at ? String(row.confirmed_at) : null,
   };
 }
 

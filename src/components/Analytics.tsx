@@ -85,7 +85,7 @@ export function Analytics({ store }: Props) {
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const label = d.toLocaleDateString('es-AR', { month: 'short', year: '2-digit' });
+      const label = monthLabel(key);
       const monthPayments = store.state.payments.filter((p) => monthKey(p.date) === key);
       const interest = monthPayments.reduce((s, p) => s + p.toInterest, 0);
       const capital = monthPayments.reduce((s, p) => s + p.toCapital, 0);
